@@ -21,3 +21,6 @@ MOTOR_NAMES = [
     "wrist_flex", "wrist_roll", "gripper",
 ]
 JOINT_KEYS = [f"{name}.pos" for name in MOTOR_NAMES]
+
+# Reset pose during inference
+RESET_POSE = [-4.571428571428571, -104.26373626373626, 95.78021978021978, -99.47252747252747, -0.8351648351648352, 0.6293706293706294]

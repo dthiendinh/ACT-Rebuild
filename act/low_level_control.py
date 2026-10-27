@@ -2,12 +2,12 @@ from lerobot.robots.so_follower import SO101Follower, SO101FollowerConfig
 import numpy as np
 import time
 import dm_env
-from hardware_constant import FOLLOWER_PORT, FOLLOWER_ID, CONTROL_DT, CAMERA_CONFIGS, MOTOR_NAMES
+from hardware_constant import FOLLOWER_PORT, FOLLOWER_ID, CONTROL_DT, CAMERA_CONFIGS, MOTOR_NAMES, RESET_POSE
 from hardware_utils import disconnect_arm
 
 ROBOT_PORT = FOLLOWER_PORT
 ROBOT_ID = FOLLOWER_ID
-RESET_POSE = None
+RESET_POSE = RESET_POSE
 DT = CONTROL_DT
 MAX_RELATIVE_TARGET = 5.0  # degrees per command; clipped again by LeRobot
 CAMERAS = CAMERA_CONFIGS
