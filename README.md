@@ -351,7 +351,7 @@ You can inspect `teleoperation/follower_state.json` after placing the follower i
 In the command below, **replace `PAN LIFT ELBOW WRIST_FLEX WRIST_ROLL GRIPPER` with six numeric values**: degrees for the first five, 0–100 for the gripper. Keep architecture and camera ordering identical to training, as recorded in `training_config.json`.
 
 ```bash
-python -m act.imitate_episodes \
+python - B -m act.imitate_episodes \
   --eval \
   --task_name so101_pick_place \
   --ckpt_dir outputs/act_pick_place_v1 \
@@ -370,21 +370,6 @@ python -m act.imitate_episodes \
 ```
 
 The shared CLI still requires `batch_size`, `num_epochs`, and `lr` in evaluation mode; it does not train in this mode. It loads `policy_best.ckpt` and `dataset_stats.pkl`. The original dataset files are unnecessary for evaluation. A reset pose is required unless you set `RESET_POSE` in code.
-
-Add `--onscreen_render` to display all task cameras with their names. Use a GUI
-Matplotlib backend; remove `MPLBACKEND=Agg` when viewing live images.
-
-For a rollout that stalls, add `--eval_debug`. About once a second it prints the
-measured joints (`qpos`), model prediction (`target`), target returned by the
-motor driver after clipping (`sent`), and next measured joints (`after`), along
-with the loop rate. Values follow the printed joint order; the first five joints
-use degrees and the gripper uses its native 0–100 scale. Compare several reports:
-unchanging predictions near the measured pose suggest the policy is holding its
-position; a persistent gap between sent targets and measured joints suggests a
-tracking problem. A difference between `target` and `sent` shows action clipping.
-The trace is saved as `eval_debug_rollout_<id>.npz` in the checkpoint directory,
-including completed steps when interrupted with Ctrl+C. A new evaluation in the
-same directory replaces traces with matching rollout IDs.
 
 By default, ACT queries once per chunk and executes that chunk sequentially. Add `--temporal_agg` to query at every step and combine overlapping predictions. Add `--onscreen_render` for a live camera view. `episode_len=300` sets 300 control steps; at the requested 30 Hz this is nominally 10 seconds, but inference and I/O add time.
 
