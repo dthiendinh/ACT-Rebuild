@@ -318,10 +318,10 @@ MPLBACKEND=Agg python3 -B -m act.imitate_episodes \
   --policy_class ACT \
   --batch_size 64 \
   --seed 0 \
-  --num_epochs 30 \
+  --num_epochs 50 \
   --lr 5e-5 \
   --kl_weight 10 \
-  --chunk_size 50 \
+  --chunk_size 40 \
   --hidden_dim 128 \
   --dim_feedforward 512
 ```
