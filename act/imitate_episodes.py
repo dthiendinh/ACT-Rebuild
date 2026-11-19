@@ -66,6 +66,15 @@ def get_image(ts, camera_names):
 def eval_bc(config, ckpt_name, save_episode=True):
     set_seed(1000)
     ckpt_dir = config['ckpt_dir']
+    # Đọc cấu hình đi kèm checkpoint: model cũ dùng decoder layer 0,
+    # model train mới dùng layer cuối. Không đổi cách đọc checkpoint cũ.
+    saved_path = os.path.join(ckpt_dir, 'training_config.json')
+    if os.path.isfile(saved_path):
+        with open(saved_path) as f:
+            saved = json.load(f)
+        config = dict(config)
+        for key in ('policy_class', 'policy_config', 'camera_names', 'state_dim'):
+            config[key] = saved[key]
     state_dim = config['state_dim']
     policy_class = config['policy_class']
     onscreen_render = config['onscreen_render']
@@ -301,6 +310,9 @@ def train_bc(train_dataloader, val_dataloader, config):
     run_name = f"seed_{seed}_{datetime.now():%Y%m%d_%H%M%S_%f}"
     log_dir = os.path.join(log_root, run_name)
     print(f'TensorBoard logs: {os.path.abspath(log_dir)}', flush=True)
+    # Số updates mới phản ánh lượng train; số epoch phụ thuộc cách lấy mẫu.
+    print(f'{len(train_dataloader)} updates/epoch; '
+          f'{num_epochs * len(train_dataloader)} total updates', flush=True)
     print(f'View live: tensorboard --logdir "{os.path.abspath(log_root)}" --port 6006', flush=True)
     global_step = 0
     min_val_loss = np.inf
@@ -447,6 +459,8 @@ def main(args):
                         'nheads': nheads,
                         'camera_names': camera_names,
                         'state_dim': state_dim,
+                        # Train mới dùng layer cuối để action loss đi qua toàn bộ decoder.
+                        'decoder_layer': -1,
                         }
     elif policy_class == 'CNNMLP':
         policy_config = {'lr': args['lr'], 
@@ -480,7 +494,7 @@ def main(args):
     }
 
     if is_eval:
-        ckpt_names = [f'policy_epoch_4993_seed_0.ckpt']
+        ckpt_names = [f'policy_last.ckpt']
         results = []
         for ckpt_name in ckpt_names:
             success_rate, avg_return = eval_bc(config, ckpt_name, save_episode=True)

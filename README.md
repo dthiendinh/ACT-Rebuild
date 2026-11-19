@@ -163,7 +163,7 @@ Keep this order consistent between recording, training, reset poses, and inferen
 ## 5. Record demonstrations
 
 ```bash
-python -B -m teleoperation.record_teleop_data --data-dir pick_place_act_v1
+python -B -m teleoperation.record_teleop_data --data-dir pick_place_marker
 ```
 
 `--data-dir` names the dataset folder under `teleoperation/data/`. The recorder connects both arms and both cameras, opens a dashboard, and starts teleoperation immediately, including when no episode is being recorded.
@@ -284,7 +284,9 @@ Other configuration locations:
 
 Training preflight checks every selected episode for arrays, joint schema, finite values, timestamps, required camera files, frame counts, and consistent image sizes. It does not fully decode every video in advance; frame decoding errors can still appear during loading.
 
-The loader shuffles episodes using the requested seed, splits approximately 80%/20%, and computes normalization statistics **only from training episodes**. Each dataset access samples one random timestep and its following action chunk. Short chunks are padded and masked out of the reconstruction loss. An epoch visits the training episodes once; it is not a sweep over every recorded frame.
+The loader shuffles episodes using the requested seed, splits approximately 80%/20%, and computes normalization statistics **only from training episodes**. Each dataset index selects one recorded frame and its following action chunk. An epoch now visits every frame in its split once; validation uses fixed frame order. Short chunks are padded and masked out of the reconstruction loss.
+
+Previously, an epoch sampled only one random timestep per episode: with 40 training episodes and batch size 64, 200 epochs meant just 200 optimizer updates. On the current split, frame-based sampling gives 168 updates/epoch; 30 epochs gives 5,040 updates. The trainer prints these counts. New training uses the final decoder layer so action loss trains all decoder layers. Evaluation reads the saved configuration to keep older checkpoints on their original decoder layer.
 
 Older recordings without `joint_names` are assumed to use this project's legacy alphabetical joint order, then reordered by the loader. Verify that assumption before using recordings from another source.
 
@@ -310,16 +312,16 @@ MPLBACKEND=Agg python -B -m act.imitate_episodes \
 This command requires the dataset and task configuration from steps 6–7. Then train into a **new output directory**, for example:
 
 ```bash
-MPLBACKEND=Agg python -B -m act.imitate_episodes \
+MPLBACKEND=Agg python3 -B -m act.imitate_episodes \
   --task_name so101_pick_place \
-  --ckpt_dir outputs/act_pick_place_v1 \
+  --ckpt_dir outputs/act_pick_place_marker_frames \
   --policy_class ACT \
-  --batch_size 1 \
+  --batch_size 64 \
   --seed 0 \
-  --num_epochs 200 \
-  --lr 1e-5 \
+  --num_epochs 30 \
+  --lr 5e-5 \
   --kl_weight 10 \
-  --chunk_size 20 \
+  --chunk_size 50 \
   --hidden_dim 128 \
   --dim_feedforward 512
 ```
@@ -368,7 +370,7 @@ outputs/act_pick_place_v1/
     └── seed_0_<timestamp>/    # Live event logs; train/val sub-runs for epoch charts
 ```
 
-Keep the configuration and statistics with the checkpoints. There is no resume-training CLI; rerunning in the same directory starts a new model and can overwrite checkpoints (TensorBoard logs use separate runs). `policy_best.ckpt` remains available if you interrupt training after the first validation; `policy_last.ckpt` is saved on normal completion. Validation samples random timesteps and a CVAE latent, so its loss can fluctuate. Low loss alone does not establish manipulation success. Use held-out task trials alongside the loss curves when deciding when to stop.
+Keep the configuration and statistics with the checkpoints. There is no resume-training CLI; rerunning in the same directory starts a new model and can overwrite checkpoints (TensorBoard logs use separate runs). `policy_best.ckpt` remains available if you interrupt training after the first validation; `policy_last.ckpt` is saved on normal completion. Validation uses fixed frame indices but still samples a CVAE latent, so its loss can fluctuate. Low loss alone does not establish manipulation success. Use held-out task trials alongside the loss curves when deciding when to stop.
 
 A `CNNMLP` baseline is also implemented (`--policy_class CNNMLP`), but ACT is the main workflow documented here.
 
@@ -381,31 +383,31 @@ You can inspect `teleoperation/follower_state.json` after placing the follower i
 In the command below, **replace `PAN LIFT ELBOW WRIST_FLEX WRIST_ROLL GRIPPER` with six numeric values**: degrees for the first five, 0–100 for the gripper. Keep architecture and camera ordering identical to training, as recorded in `training_config.json`.
 
 ```bash
-python - B -m act.imitate_episodes \
+MPLBACKEND=Agg python -B -m act.imitate_episodes \
   --eval \
+  --temporal_agg \
   --task_name so101_pick_place \
-  --ckpt_dir outputs/act_pick_place_v1 \
+  --ckpt_dir outputs/act_pick_place_marker \
   --policy_class ACT \
   --batch_size 1 \
   --seed 0 \
   --num_epochs 1 \
   --lr 1e-5 \
   --kl_weight 10 \
-  --chunk_size 20 \
+  --chunk_size 50 \
   --hidden_dim 128 \
   --dim_feedforward 512 \
   --num_rollouts 1 \
-  --max_relative_target 5.0 \
-  --reset_pose PAN LIFT ELBOW WRIST_FLEX WRIST_ROLL GRIPPER
+  --max_relative_target 10.0 \
 ```
 
-The shared CLI still requires `batch_size`, `num_epochs`, and `lr` in evaluation mode; it does not train in this mode. It loads `policy_best.ckpt` and `dataset_stats.pkl`. The original dataset files are unnecessary for evaluation. A reset pose is required unless you set `RESET_POSE` in code.
+The shared CLI still requires `batch_size`, `num_epochs`, and `lr` in evaluation mode; it does not train in this mode. It loads `policy_last.ckpt` and `dataset_stats.pkl`. When available, `training_config.json` supplies the architecture and camera ordering, including the decoder layer used during training. The original dataset files are unnecessary for evaluation. A reset pose is required unless you set `RESET_POSE` in code.
 
-By default, ACT queries once per chunk and executes that chunk sequentially. Add `--temporal_agg` to query at every step and combine overlapping predictions. Add `--onscreen_render` for a live camera view. `episode_len=300` sets 300 control steps; at the requested 30 Hz this is nominally 10 seconds, but inference and I/O add time.
+By default, ACT queries once per chunk and executes that chunk sequentially. Add `--temporal_agg` to query at every step and combine overlapping predictions. Add `--onscreen_render` for a live camera view. Observation intervals now budget inference and motor I/O within `CONTROL_DT`, rather than adding a full sleep after inference; overruns still reduce the achieved rate.
 
 `max_relative_target` limits the target change from the measured position per motor command, including the gripper's own units. It does not check collisions or define a safe workspace. `Ctrl+C` exits through the cleanup path.
 
-The real environment has **no automatic task reward or success detector**. Evaluation reports completed rollouts and writes `result_policy_best.txt`; assess task success yourself. Rollout video saving is not implemented.
+The real environment has **no automatic task reward or success detector**. Evaluation reports completed rollouts and writes `result_policy_last.txt`; assess task success yourself. Rollout video saving is not implemented.
 
 ## Troubleshooting
 

@@ -32,7 +32,8 @@ class DETRVAE(nn.Module):
     """
     This is the DETR module that performs object detection
     """
-    def __init__(self, backbones, transformer, encoder, state_dim, num_queries, camera_names):
+    def __init__(self, backbones, transformer, encoder, state_dim, num_queries, camera_names,
+                 decoder_layer=0):
         """
         Initializes the model.
         Parameters:
@@ -48,6 +49,9 @@ class DETRVAE(nn.Module):
         self.camera_names = camera_names
         self.transformer = transformer
         self.encoder = encoder
+        # Checkpoint cũ mặc định layer 0; train mới truyền decoder_layer=-1.
+        # Chọn layer cuối để action loss truyền ngược qua toàn bộ decoder.
+        self.decoder_layer = decoder_layer
         hidden_dim = transformer.d_model
         self.action_head = nn.Linear(hidden_dim, state_dim)
         self.is_pad_head = nn.Linear(hidden_dim, 1)
@@ -136,15 +140,17 @@ class DETRVAE(nn.Module):
             # proprioception features
             proprio_input = self.input_proj_robot_state(qpos)     # [bs, hidden_dim]
 
+            # Transformer trả (num_layers, batch, chunk, hidden): chọn layer,
+            # không phải chọn phần tử batch. [-1] dùng output decoder cuối.
             hs = self.transformer(src, None, self.query_embed.weight, pos, 
-                                    latent_input, proprio_input, self.additional_pos_embed.weight)[0]
+                                    latent_input, proprio_input, self.additional_pos_embed.weight)[self.decoder_layer]
             
         else:
             qpos = self.input_proj_robot_state(qpos)
             env_state = self.input_proj_env_state(env_state)
             transformer_input = torch.cat([qpos, env_state], axis = 1)  # seq length = 2
             hs = self.transformer(transformer_input, None, self.query_embed.weight,
-                                     self.pos.weight)[0]
+                                     self.pos.weight)[self.decoder_layer]
         
         # Output 
         a_hat = self.action_head(hs)
@@ -257,6 +263,7 @@ def build(args):
         state_dim=state_dim,
         num_queries=args.num_queries,
         camera_names=args.camera_names,
+        decoder_layer=getattr(args, "decoder_layer", 0),
     )
 
     n_parameters = sum(p.numel() for p in model.parameters() if p.requires_grad)

@@ -49,9 +49,20 @@ class EpisodicDataset(torch.utils.data.Dataset):
         self.camera_names = camera_names
         self.norm_stats = norm_stats
         self.chunk_size = int(chunk_size)
+        # Mỗi index là một frame, thay vì một episode lấy ngẫu nhiên 1 frame.
+        # Cộng dồn độ dài để ánh xạ index sang đúng episode và timestep.
+        lengths = []
+        for episode_id in self.episode_ids:
+            path = os.path.join(dataset_dir, f"episode_{episode_id:04d}", "data.npz")
+            with np.load(path) as data:
+                lengths.append(len(data["actions"]))
+        if not lengths or min(lengths) < 1:
+            raise ValueError("Dataset must contain nonempty episodes")
+        self.cumulative_lengths = np.cumsum(lengths)
 
     def __len__(self):
-        return len(self.episode_ids)
+        # Một epoch đi qua toàn bộ frame trong split train/validation.
+        return int(self.cumulative_lengths[-1])
 
     def __getitem__(self, index):
         """
@@ -63,8 +74,13 @@ class EpisodicDataset(torch.utils.data.Dataset):
             action_data: (chunk_size, action_dim)
             is_pad: (chunk_size,)
         """
-        # Determine which episode and timestep this index uses
-        episode_id = self.episode_ids[index]
+        if index < 0 or index >= len(self):
+            raise IndexError(index)
+        # Ví dụ lengths=[3, 5]: index 3 là frame 0 của episode thứ hai.
+        episode_index = int(np.searchsorted(self.cumulative_lengths, index, side="right"))
+        offset = int(self.cumulative_lengths[episode_index - 1]) if episode_index else 0
+        start_ts = index - offset
+        episode_id = self.episode_ids[episode_index]
         
         episode_dir = os.path.join(self.dataset_dir, f"episode_{episode_id:04d}")
 
@@ -76,8 +92,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
         if episode_len == 0:
             raise ValueError(f"Episode has no samples: {data_path}")
 
-        # Recorded episode length varies; only the model's action chunk is fixed.
-        start_ts = np.random.choice(episode_len)
+        # start_ts đã xác định từ index; chỉ chunk_size là cố định.
+        # Không random lại timestep vì như vậy sẽ bỏ sót/lặp frame trong epoch.
 
         qpos = states[start_ts]  # Shape (6,)
         action = actions[start_ts:start_ts + self.chunk_size]
@@ -230,7 +246,8 @@ def load_data(dataset_dir, num_episodes, camera_names, batch_size_train, batch_s
     val_dataset = EpisodicDataset(val_indices, dataset_dir, camera_names, norm_stats, chunk_size)
     # TODO: change the numworker to avoid the bottle neck when inputing data
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size_train, shuffle=True, pin_memory=torch.cuda.is_available(), num_workers = 4, prefetch_factor=1)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=True, pin_memory=torch.cuda.is_available(), num_workers = 4, prefetch_factor=1)
+    # Validation dùng cùng frame và thứ tự giữa các epoch để dễ đối chiếu loss.
+    val_dataloader = DataLoader(val_dataset, batch_size=batch_size_val, shuffle=False, pin_memory=torch.cuda.is_available(), num_workers = 4, prefetch_factor=1)
 
     return train_dataloader, val_dataloader, norm_stats
 

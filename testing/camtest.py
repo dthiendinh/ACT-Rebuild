@@ -6,8 +6,8 @@ import cv2
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", type=int, default=1)
-    parser.add_argument("--width", type=int, default=1280)
-    parser.add_argument("--height", type=int, default=720)
+    parser.add_argument("--width", type=int, default=640)
+    parser.add_argument("--height", type=int, default=480)
     parser.add_argument("--fps", type=int, default=30)
     args = parser.parse_args()
     cam = cv2.VideoCapture(args.index)

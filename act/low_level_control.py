@@ -9,14 +9,14 @@ ROBOT_PORT = FOLLOWER_PORT
 ROBOT_ID = FOLLOWER_ID
 RESET_POSE = RESET_POSE
 DT = CONTROL_DT
-MAX_RELATIVE_TARGET = 5.0  # degrees per command; clipped again by LeRobot
+MAX_RELATIVE_TARGET = 5.0  # Per-command cap: degrees for arm, 0-100 units for gripper.
 CAMERAS = CAMERA_CONFIGS
 #TODO:
 TASK_CONFIGS = {
     "so101_pick_place": {
         "dataset_dir": "/workspace/data/pick_place_marker",
         "num_episodes": 50,  # Set to your approved, consecutively numbered count.
-        "episode_len": 1000,  # Evaluation steps; does not truncate training data.
+        "episode_len": 500,  # Evaluation steps; does not truncate training data.
         "camera_names": ["wrist", "front"],
         "state_dim": 6,
     },
@@ -28,6 +28,7 @@ class RealEnv:
     def __init__(self, port, robot_id, cameras=None, dt=CONTROL_DT, reset_pose=None, max_relative_target=None):
         self.dt = dt
         self.reset_pose = reset_pose
+        self._next_observation_at = None
 
         # SO-ARM configuration
         config = SO101FollowerConfig(
@@ -169,25 +170,38 @@ class RealEnv:
         if not fake:
             self._reset_joints()
 
+        # Mốc observation tiếp theo, dùng để tính phần thời gian còn lại của DT.
+        observation_start = time.perf_counter()
+        observation = self.get_observation()
+        self._next_observation_at = observation_start + self.dt
         # container TimeStep
         return dm_env.TimeStep(
             step_type=dm_env.StepType.FIRST,
             reward=self.get_reward(),
             discount=None,
-            observation=self.get_observation(),
+            observation=observation,
         )
     
     def step(self, action):
         # send one 6D ACT action to SO-ARM101
         robot_action = self._vector_to_action_dict(action)
         self.robot.send_action(robot_action)
-        time.sleep(self.dt)
+        # Chỉ nghỉ phần còn lại của chu kỳ DT, có tính cả inference và motor I/O.
+        # Nghỉ trước rồi mới đọc observation để policy nhận ảnh/state mới.
+        deadline = self._next_observation_at
+        if deadline is None:
+            deadline = time.perf_counter() + self.dt
+        time.sleep(max(0.0, deadline - time.perf_counter()))
+        observation_start = time.perf_counter()
+        observation = self.get_observation()
+        # Nếu xử lý quá DT, bắt đầu chu kỳ mới; không chạy dồn để bù thời gian.
+        self._next_observation_at = max(deadline, observation_start) + self.dt
 
         return dm_env.TimeStep(
             step_type=dm_env.StepType.MID,
             reward=self.get_reward(),
             discount=None,
-            observation=self.get_observation(),
+            observation=observation,
         )
 
     def close(self):
