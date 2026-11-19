@@ -295,7 +295,7 @@ First run one epoch to check the complete training path:
 ```bash
 MPLBACKEND=Agg python -B -m act.imitate_episodes \
   --task_name so101_pick_place \
-  --ckpt_dir outputs/act_pick_place_smoke \
+  --ckpt_dir outputs/act_pick_place_marker \
   --policy_class ACT \
   --batch_size 1 \
   --seed 0 \
@@ -316,7 +316,7 @@ MPLBACKEND=Agg python -B -m act.imitate_episodes \
   --policy_class ACT \
   --batch_size 1 \
   --seed 0 \
-  --num_epochs 2000 \
+  --num_epochs 200 \
   --lr 1e-5 \
   --kl_weight 10 \
   --chunk_size 20 \

@@ -9,8 +9,8 @@ FOLLOWER_ID = "so101_follower"
 
 CAMERA_FPS = 30
 CAMERA_CONFIGS = {
-    "front": OpenCVCameraConfig(index_or_path=0, width=1280, height=720, fps=CAMERA_FPS),
-    "wrist": OpenCVCameraConfig(index_or_path=1, width=1280, height=720, fps=CAMERA_FPS),
+    "front": OpenCVCameraConfig(index_or_path=1, width=640, height=480, fps=CAMERA_FPS),
+    "wrist": OpenCVCameraConfig(index_or_path=0, width=640, height=480, fps=CAMERA_FPS),
 }
 CONTROL_HZ = 30.0
 CONTROL_DT = 1.0 / CONTROL_HZ
