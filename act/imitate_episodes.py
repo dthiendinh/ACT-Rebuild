@@ -12,11 +12,12 @@ import json
 import argparse
 import matplotlib.pyplot as plt
 from copy import deepcopy
+from datetime import datetime
 from tqdm import tqdm
 from einops import rearrange
 
 from act.utils import load_data  # data functions
-from act.utils import compute_dict_mean, set_seed, detach_dict, aggregate_temporal_actions  # helper functions
+from act.utils import set_seed, aggregate_temporal_actions  # helper functions
 from act.policy import ACTPolicy, CNNMLPPolicy
 
 import IPython
@@ -275,11 +276,19 @@ def forward_pass(data, policy):
 
 
 def train_bc(train_dataloader, val_dataloader, config):
+    # Keep evaluation usable without the training-only TensorBoard dependency.
+    from torch.utils.tensorboard import SummaryWriter
+
     num_epochs = config['num_epochs']
     ckpt_dir = config['ckpt_dir']
     seed = config['seed']
     policy_class = config['policy_class']
     policy_config = config['policy_config']
+    log_every_steps = config.get('log_every_steps', 1)
+    if log_every_steps < 1:
+        raise ValueError('log_every_steps must be at least 1')
+    if len(train_dataloader) == 0 or len(val_dataloader) == 0:
+        raise ValueError('Training and validation dataloaders must both contain batches')
 
     set_seed(seed)
 
@@ -287,17 +296,26 @@ def train_bc(train_dataloader, val_dataloader, config):
     policy.to(device)
     optimizer = make_optimizer(policy_class, policy)
 
-    train_history = []
-    validation_history = []
+    os.makedirs(ckpt_dir, exist_ok=True)
+    log_root = config.get('tensorboard_dir') or os.path.join(ckpt_dir, 'tensorboard')
+    run_name = f"seed_{seed}_{datetime.now():%Y%m%d_%H%M%S_%f}"
+    log_dir = os.path.join(log_root, run_name)
+    print(f'TensorBoard logs: {os.path.abspath(log_dir)}', flush=True)
+    print(f'View live: tensorboard --logdir "{os.path.abspath(log_root)}" --port 6006', flush=True)
+    global_step = 0
     min_val_loss = np.inf
     best_ckpt_info = None
-    with tqdm(total=num_epochs, desc="Training", dynamic_ncols=True) as progress:
+    with SummaryWriter(log_dir=log_dir, flush_secs=5) as writer, \
+            tqdm(total=num_epochs, desc="Training", dynamic_ncols=True) as progress:
+        writer.add_text('config', json.dumps(config, indent=2), 0)
         for epoch in range(num_epochs):
 
             # Training
             policy.train()
             optimizer.zero_grad()
-            for batch_idx, data in enumerate(train_dataloader):
+            train_sums = {}
+            train_batches = 0
+            for data in train_dataloader:
                 forward_dict = forward_pass(data, policy)
 
                 # Backward
@@ -307,34 +325,57 @@ def train_bc(train_dataloader, val_dataloader, config):
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
-                train_history.append(detach_dict(forward_dict))
-            epoch_summary = compute_dict_mean(train_history[(batch_idx+1) * epoch: (batch_idx+1)*(epoch+1)])
-            epoch_train_loss = epoch_summary['loss']
+                global_step += 1
+                train_batches += 1
+                # Only keep scalar sums for this epoch, never the full GPU history.
+                metrics = {key: value.detach().item() for key, value in forward_dict.items()}
+                for key, value in metrics.items():
+                    train_sums[key] = train_sums.get(key, 0.0) + value
+                if global_step == 1 or global_step % log_every_steps == 0:
+                    for key, value in metrics.items():
+                        writer.add_scalar(f'train_step/{key}', value, global_step)
+                    for group_idx, group in enumerate(optimizer.param_groups):
+                        writer.add_scalar(f'lr/group_{group_idx}', group['lr'], global_step)
+            train_summary = {key: value / train_batches for key, value in train_sums.items()}
+            epoch_train_loss = train_summary['loss']
 
 
             #validation
             with torch.inference_mode():
                 policy.eval()
-                epoch_dicts = []
-                for batch_idx, data in enumerate(val_dataloader):
+                val_sums = {}
+                val_batches = 0
+                for data in val_dataloader:
                     forward_dict = forward_pass(data, policy)
-                    epoch_dicts.append(forward_dict)
-                epoch_summary = compute_dict_mean(epoch_dicts)
-                validation_history.append(epoch_summary)
+                    if not torch.isfinite(forward_dict['loss']):
+                        raise RuntimeError('Non-finite validation loss; check dataset and hyperparameters')
+                    val_batches += 1
+                    for key, value in forward_dict.items():
+                        val_sums[key] = val_sums.get(key, 0.0) + value.item()
+                val_summary = {key: value / val_batches for key, value in val_sums.items()}
 
-                epoch_val_loss = epoch_summary['loss']
+                epoch_val_loss = val_summary['loss']
                 if epoch_val_loss < min_val_loss:
                     min_val_loss = epoch_val_loss
                     best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
+                    torch.save(best_ckpt_info[2], os.path.join(ckpt_dir, 'policy_best.ckpt'))
+
+            # Train and validation share a chart and the same (1-based) epoch axis.
+            for key in train_summary:
+                writer.add_scalars(f'epoch/{key}', {
+                    'train': train_summary[key],
+                    'val': val_summary[key],
+                }, epoch + 1)
+            writer.add_scalar('validation/best_loss', min_val_loss, epoch + 1)
+            writer.flush()
 
             if epoch % 100 == 0:
                 ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
                 torch.save(policy.state_dict(), ckpt_path)
-                plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
 
             progress.set_postfix(
-                train=f"{epoch_train_loss.item():.4f}",
-                val=f"{epoch_val_loss.item():.4f}",
+                train=f"{epoch_train_loss:.4f}",
+                val=f"{epoch_val_loss:.4f}",
                 best=f"{float(min_val_loss):.4f}",
                 refresh=False,
             )
@@ -350,30 +391,7 @@ def train_bc(train_dataloader, val_dataloader, config):
     torch.save(best_state_dict, ckpt_path)
     print(f'Training finished:\nSeed {seed}, val loss {min_val_loss:.6f} at epoch {best_epoch}')
 
-    # Save training curves
-    plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed)
-
     return best_ckpt_info
-
-
-def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
-    # save training curves
-    for key in train_history[0]:
-        plot_path = os.path.join(ckpt_dir, f'train_val_{key}_seed_{seed}.png')
-        plt.figure()
-        train_values = [summary[key].item() for summary in train_history]
-        val_values = [summary[key].item() for summary in validation_history]
-        plt.plot(np.linspace(0, num_epochs-1, len(train_history)), train_values, label='train')
-        plt.plot(np.linspace(0, num_epochs-1, len(validation_history)), val_values, label='validation')
-        # plt.ylim([-0.1, 1])
-        plt.tight_layout()
-        plt.legend()
-        plt.title(key)
-        plt.savefig(plot_path)
-        plt.close()
-
-
-
 
 
 def main(args):
@@ -457,6 +475,8 @@ def main(args):
         'max_relative_target': args['max_relative_target'],
         'dataset_dir': dataset_dir,
         'num_episodes': num_episodes,
+        'tensorboard_dir': args.get('tensorboard_dir'),
+        'log_every_steps': args.get('log_every_steps', 1),
     }
 
     if is_eval:
@@ -506,6 +526,10 @@ if __name__ == '__main__':
     parser.add_argument('--seed', action='store', type=int, help='seed', required=True)
     parser.add_argument('--num_epochs', action='store', type=int, help='num_epochs', required=True)
     parser.add_argument('--lr', action='store', type=float, help='lr', required=True)
+    parser.add_argument('--tensorboard_dir', type=str, default=None,
+                        help='Log root; defaults to <ckpt_dir>/tensorboard. Each run gets a new subdirectory.')
+    parser.add_argument('--log_every_steps', type=int, default=1,
+                        help='Write batch metrics every N optimizer steps (default: 1).')
 
     # for ACT
     parser.add_argument('--kl_weight', action='store', type=int, help='KL Weight', required=False)

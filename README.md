@@ -324,7 +324,36 @@ MPLBACKEND=Agg python -B -m act.imitate_episodes \
   --dim_feedforward 512
 ```
 
-These are starting settings, not validated task-performance hyperparameters. Adjust the training duration and model settings based on validation loss and physical task trials. `hidden_dim` must be positive and divisible by 8. Reduce batch size, chunk size, or model width if memory is insufficient. `MPLBACKEND=Agg` saves training plots without opening windows.
+These are starting settings, not validated task-performance hyperparameters. Adjust the training duration and model settings based on validation loss and physical task trials. `hidden_dim` must be positive and divisible by 8. Reduce batch size, chunk size, or model width if memory is insufficient. Training curves are recorded in TensorBoard; PNG history plots are no longer generated. `MPLBACKEND=Agg` is optional for headless training.
+
+### Watch loss live in TensorBoard
+
+For an existing environment, install the new dependency with `python -m pip install tensorboard`. Start training as above, then open a second terminal in the same Python environment and run:
+
+```bash
+tensorboard --logdir outputs/act_pick_place_v1/tensorboard --port 6006 --reload_interval 5
+```
+
+Open **http://localhost:6006** and select **Scalars**. Events are flushed within about five seconds, plus the browser's refresh interval; you can watch training before an epoch finishes.
+
+| Chart | Contents | Horizontal axis |
+| --- | --- | --- |
+| `train_step/loss`, `train_step/l1`, `train_step/kl` | Total ACT loss, reconstruction loss, and unweighted KL, logged every batch by default | Optimizer step (starts at 1) |
+| `epoch/loss`, `epoch/l1`, `epoch/kl` | Train and validation means on the same chart; select both runs to compare | Completed epoch (starts at 1) |
+| `validation/best_loss` | Lowest validation loss so far | Completed epoch |
+| `lr/group_*` | Learning rate for each optimizer parameter group | Optimizer step |
+
+For ACT, total loss is `l1 + kl_weight * kl`. CNNMLP records `mse` instead of `l1` and `kl`. Epoch metrics keep the original mean-over-batches convention. Validation runs after each training epoch, so its first point appears only after the first epoch finishes.
+
+Optional trainer flags: `--log_every_steps 10` reduces batch logging frequency (the first step is always logged); `--tensorboard_dir outputs/tensorboard` chooses a shared log root. Each invocation creates a separate timestamped run. The terminal prints the exact log directory and viewing command. TensorBoard can read `--logdir outputs` to compare runs across output directories.
+
+When training on a remote GPU server, run TensorBoard there. From your local machine, forward its port:
+
+```bash
+ssh -L 6006:127.0.0.1:6006 USER@SERVER -p SSH_PORT
+```
+
+Replace the connection details with your server's SSH settings, keep that session open, then visit **http://localhost:6006** locally.
 
 Training writes:
 
@@ -332,13 +361,14 @@ Training writes:
 outputs/act_pick_place_v1/
 ├── training_config.json       # Task, architecture and run settings
 ├── dataset_stats.pkl          # Train-only normalization and joint schema
-├── policy_best.ckpt           # Lowest validation loss after a training epoch
+├── policy_best.ckpt           # Updated immediately when validation improves
 ├── policy_last.ckpt
 ├── policy_epoch_*_seed_*.ckpt
-└── train_val_*_seed_*.png
+└── tensorboard/
+    └── seed_0_<timestamp>/    # Live event logs; train/val sub-runs for epoch charts
 ```
 
-Keep the configuration and statistics with the checkpoints. There is no resume-training CLI; rerunning in the same directory starts a new model and can overwrite outputs. Validation samples random timesteps and a CVAE latent, so its loss can fluctuate. Low loss alone does not establish manipulation success.
+Keep the configuration and statistics with the checkpoints. There is no resume-training CLI; rerunning in the same directory starts a new model and can overwrite checkpoints (TensorBoard logs use separate runs). `policy_best.ckpt` remains available if you interrupt training after the first validation; `policy_last.ckpt` is saved on normal completion. Validation samples random timesteps and a CVAE latent, so its loss can fluctuate. Low loss alone does not establish manipulation success. Use held-out task trials alongside the loss curves when deciding when to stop.
 
 A `CNNMLP` baseline is also implemented (`--policy_class CNNMLP`), but ACT is the main workflow documented here.
 

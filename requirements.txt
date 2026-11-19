@@ -10,3 +10,4 @@ matplotlib
 IPython
 einops
 tqdm
+tensorboard
