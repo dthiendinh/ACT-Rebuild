@@ -399,7 +399,7 @@ MPLBACKEND=Agg python -B -m act.imitate_episodes \
   --chunk_size 40 \
   --hidden_dim 128 \
   --dim_feedforward 512 \
-  --num_rollouts 1 \
+  --num_rollouts 10 \
   --max_relative_target 5.0 \
   --reset_pose PAN LIFT ELBOW WRIST_FLEX WRIST_ROLL GRIPPER
 ```

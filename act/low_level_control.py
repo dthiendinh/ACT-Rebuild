@@ -15,7 +15,7 @@ CAMERAS = CAMERA_CONFIGS
 TASK_CONFIGS = {
     "so101_pick_place": {
         "dataset_dir": "/workspace/data/pick_place_marker",
-        "num_episodes": 50,  # Set to your approved, consecutively numbered count.
+        "num_episodes": 100,  # Set to your approved, consecutively numbered count.
         "episode_len": 500,  # Evaluation steps; does not truncate training data.
         "camera_names": ["wrist", "front"],
         "state_dim": 6,
