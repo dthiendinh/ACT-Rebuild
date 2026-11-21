@@ -316,14 +316,14 @@ This command requires the dataset and task configuration from steps 6–7. Then 
 ```bash
 MPLBACKEND=Agg python3 -B -m act.imitate_episodes \
   --task_name so101_pick_place \
-  --ckpt_dir outputs/act_pick_place_marker_frames \
+  --ckpt_dir outputs/act_pick_place_marker_100 \
   --policy_class ACT \
   --batch_size 64 \
   --seed 0 \
-  --num_epochs 50 \
+  --num_epochs 30 \
   --lr 5e-5 \
   --kl_weight 10 \
-  --chunk_size 40 \
+  --chunk_size 30 \
   --hidden_dim 128 \
   --dim_feedforward 512
 ```
@@ -387,16 +387,17 @@ In the command below, **replace `PAN LIFT ELBOW WRIST_FLEX WRIST_ROLL GRIPPER` w
 ```bash
 MPLBACKEND=Agg python -B -m act.imitate_episodes \
   --eval \
+  --onscreen_render \
   --temporal_agg \
   --task_name so101_pick_place \
-  --ckpt_dir outputs/act_pick_place_marker_frames \
+  --ckpt_dir outputs/act_pick_place_marker_100 \
   --policy_class ACT \
   --batch_size 1 \
   --seed 0 \
   --num_epochs 1 \
   --lr 5e-5 \
   --kl_weight 10 \
-  --chunk_size 40 \
+  --chunk_size 30 \
   --hidden_dim 128 \
   --dim_feedforward 512 \
   --num_rollouts 10 \

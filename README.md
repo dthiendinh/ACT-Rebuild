@@ -36,19 +36,6 @@ During training, a separate CVAE encoder receives a `[CLS]` token, the current j
 
 Encoder self-attention mixes visual, state, and latent information. Decoder self-attention connects action-query positions, while cross-attention reads the encoder memory. A linear action head maps the final decoder output to six normalized joint targets per timestep; saved action statistics convert these predictions back to robot units. Learned query embeddings encode the action positions; the decoder's initial content tensor is zero.
 
-| Component | Current implementation |
-| --- | --- |
-| Observations | Two RGB cameras, ordered `wrist`, `front`, and six joint positions |
-| Visual backbone | Shared ImageNet-pretrained ResNet18; trainable weights with frozen BatchNorm |
-| CVAE encoder / policy encoder / policy decoder | 4 / 4 / 7 Transformer layers; 8 attention heads |
-| Latent dimension | 32; sampled during training and validation, zero during inference |
-| Action output | `K × 6` absolute joint targets, including the gripper |
-| Chunk size / hidden width / feedforward width | Configurable; read the evaluated checkpoint's `training_config.json` |
-| Training objective | Masked action L1 + `kl_weight × KL` |
-| State/action normalization | Per-joint mean and standard deviation from training episodes only |
-
-New training uses the final decoder layer. Evaluation restores the saved architecture, including the decoder-layer choice for older checkpoints.
-
 ## Training metrics
 
 **Status: TensorBoard figures and the evaluated run configuration to be added.**
@@ -81,24 +68,6 @@ New training uses the final decoder layer. Evaluation restores the saved archite
 </table>
 
 TensorBoard records total loss, masked action L1, unweighted KL, best validation loss, and learning rates. Epoch charts use completed epochs; batch charts use optimizer updates. Export the raw traces and state any smoothing used. Setup and live viewing commands are in the [training guide](docs/training_guide/README.md#watch-loss-live-in-tensorboard).
-
-### Experiment setup
-
-The collection and preliminary training settings below are user-reported. Exact run artifacts and structured rollout measurements are pending.
-
-| Setting | Pick-and-place experiment |
-| --- | --- |
-| Robot | SO-ARM101; six joint targets including gripper |
-| Task | Pick up an orange marker and put it in the cup |
-| Collection | 50 demonstration episodes; approximately 15,000 frames |
-| Object layouts | Five marker positions; cup held fixed |
-| Cameras | Front and wrist; configured at 640 × 480 |
-| Dataset split | Current loader: 80% / 20% by episode; 40 / 10 for 50 episodes |
-| Preliminary training | Batch size 64; 200 epochs |
-| Evaluated checkpoint / chunk size / learning rate / seed | Pending run artifacts |
-| Optimizer updates / training device | Pending run artifacts |
-
-The current loader visits every frame in each split once per epoch. Earlier episode-sampling runs used a different number of updates per epoch, so record the code revision and actual optimizer updates when comparing training runs. Validation episodes used for checkpoint selection are separate from the real-robot test layouts.
 
 ### What the losses measure
 
@@ -139,16 +108,12 @@ This comparison changes both query frequency and aggregation. Report it as a com
     <td align="center" width="50%">
       <strong>No temporal aggregation</strong><br>
       <em>Pick-and-place video to be added.</em>
-      <!-- Replace the placeholder with a clickable thumbnail:
-      <a href="docs/assets/rollouts/no_temporal.mp4"><img src="docs/assets/rollouts/no_temporal.jpg" alt="Watch ACT rollout without temporal aggregation" width="100%"></a>
-      -->
+      <a href="docs/assets/no_temporal.MOV"><img src="docs/assets/no_temporal.png" alt="Watch ACT rollout without temporal aggregation" width="100%"></a>
     </td>
     <td align="center" width="50%">
       <strong>Temporal aggregation</strong><br>
       <em>Pick-and-place video to be added.</em>
-      <!-- Replace the placeholder with a clickable thumbnail:
-      <a href="docs/assets/rollouts/temporal.mp4"><img src="docs/assets/rollouts/temporal.jpg" alt="Watch ACT rollout with temporal aggregation" width="100%"></a>
-      -->
+      <a href="docs/assets/temporal.MOV"><img src="docs/assets/temporal.png" alt="Watch ACT rollout with temporal aggregation" width="100%"></a>
     </td>
   </tr>
 </table>
