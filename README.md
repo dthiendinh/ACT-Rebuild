@@ -45,24 +45,24 @@ Encoder self-attention mixes visual, state, and latent information. Decoder self
     <td align="center" width="50%">
       <strong>Training and validation loss</strong><br>
       <em>Epoch loss figure to be added.</em>
-      <!-- <img src="docs/assets/metrics/epoch_loss.png" alt="Training and validation ACT loss by epoch" width="100%"> -->
+      <img src="docs/assets/metrics/epoch_loss.png" alt="Training and validation ACT loss by epoch" width="100%">
     </td>
     <td align="center" width="50%">
       <strong>Action reconstruction loss</strong><br>
       <em>Masked L1 figure to be added.</em>
-      <!-- <img src="docs/assets/metrics/epoch_l1.png" alt="Training and validation action L1 by epoch" width="100%"> -->
+      <img src="docs/assets/metrics/epoch_l1.png" alt="Training and validation action L1 by epoch" width="100%">
     </td>
   </tr>
   <tr>
     <td align="center">
       <strong>KL divergence</strong><br>
       <em>KL figure to be added.</em>
-      <!-- <img src="docs/assets/metrics/epoch_kl.png" alt="Training and validation unweighted KL divergence by epoch" width="100%"> -->
+      <img src="docs/assets/metrics/epoch_kl.png" alt="Training and validation unweighted KL divergence by epoch" width="100%">
     </td>
     <td align="center">
       <strong>Training loss by update</strong><br>
       <em>Optimizer-step figure to be added.</em>
-      <!-- <img src="docs/assets/metrics/train_step.png" alt="ACT training loss by optimizer update" width="100%"> -->
+      <img src="docs/assets/metrics/train_step.png" alt="ACT training loss by optimizer update" width="100%">
     </td>
   </tr>
 </table>
